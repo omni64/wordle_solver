@@ -1,115 +1,92 @@
-import pickle
-import nltk
-from nltk.util import ngrams
-import string
-from copy import deepcopy as copy
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-import pandas as pd
-from matplotlib import rcParams
-import matplotlib.gridspec as gridspec
-rcParams['figure.figsize'] = (12,9)
-rcParams['figure.facecolor'] = '#d9cbd7'
-from wordfreq import word_frequency
-from tqdm import tqdm
-import re
 import random
-random.seed = 42
+import re
+import emoji
+import json
+import pickle
+from wordfreq import word_frequency
+from time import sleep
+class WordleSolver():
+    def __init__(self) -> None:
+        random.seed(42)
+        self.small_path = 'words.csv'
+        self.large_path = 'guesses.csv'
 
-
-def sort_dict(dictionary:dict):
-    return dict(sorted(dictionary.items() , key=lambda x: dictionary.get(x[0]), reverse=True))
-
-
-
-
-with open('guesses.csv', 'r') as f:
-    words = f.read()
-wordbank = words.split('\n')
-wordbank = list(map(lambda word: word.upper(), wordbank))
-selected =[]
-with open('words.csv', 'r') as f:
-    words = f.read()
-selected = words.split('\n')
-selected = list(map(lambda word: word.upper(), selected))
-
-
-
-
-def get_diff(guess, answer):
-    ans_grid=[0]*5
-    guess = list(guess.upper())
-    answer = list(answer.upper())
-    idx = 0
-    while len(guess) > 0:
-        letter = guess.pop(0)
-        if letter in answer:
-            if answer.index(letter) == idx:
-                ans_grid[idx] = 10
-            else:
-                ans_grid[idx] = 5
-            answer[answer.index(letter)] = 0
-        idx += 1
-    return ans_grid
-
-
-
-
-
-def get_regex(guess, ans_grid):
-    guess = guess.upper()
-    possibilities = []
-    build = ''
-    scraps = []
-    for i in range(5):
-        if ans_grid[i] == 10:
-            build += guess[i]
-        elif ans_grid[i] == 5:
-            build += f'[^{guess[i]}]'
+    def load_words(self, small = False):
+        wordbank = []
+        if small:
+            with open(self.small_path, 'r') as f:
+                words = f.read()
+            wordbank = words.split('\n')
+            wordbank = list(map(lambda word: word.upper(), wordbank))
         else:
-            build += '[A-Z]'
-    return build
+            with open(self.large_path, 'r') as f:
+                words = f.read()
+            wordbank = words.split('\n')
+            wordbank = list(map(lambda word: word.upper(), wordbank))
+        return wordbank
 
+    
 
+    def get_regex(self, guess, ans_grid):
+        guess = guess.upper()
+        discarded = []
+        misplaced = []
+        build = ''
+        for i in range(5):
+            if ans_grid[i] == 0:
+                discarded.append(guess[i])
+        for i in range(5):
+            if ans_grid[i] == 2:
+                build += guess[i]
+            elif ans_grid[i] == 1:
+                misplaced.append(guess[i])
+                build += f'[^{guess[i]}{"".join(discarded)}]'
+            else:
+                build+= f'[^{"".join(discarded)}]'
+        return build, misplaced
 
+    def get_possible_words(self, guess, ans_grid, wordbank = []):
+        if not wordbank:
+            wordbank = self.load_words()
+        possibilities = []
+        restring, misplaced = self.get_regex(guess, ans_grid)
+        for word in wordbank:
+            if re.match(restring, word):
+                possibilities.append(word)
+        filtered = []
+        for letter in misplaced:
+            for word in possibilities:
+                if letter not in word:
+                    filtered.append(word)
+        for word in set(filtered):
+            possibilities.remove(word)
+        possibilities = sorted(possibilities, key=lambda x: word_frequency(x, 'en'), reverse=True)
+        return possibilities
+    
+    def assistant(self,wordbank = [], random_word = True):
+        guess = input('Please enter guess : ')
+        ans_grid = input('Please enter answer grid:\n0 - letter not in word\n1 - letter in word but wrong position\n2 - letter in correct position:\n')
+        ans_grid = list(map(lambda x: int(x), list(ans_grid)))
+        possible = self.get_possible_words(guess, ans_grid, wordbank)
+        if len(possible) == 1 or sum(ans_grid) == 10:
+            print('Congratulations. The answer is :', possible[0])
+            sleep(2)
+            exit()
+        if len(possible) > 15:
+            if random_word:
+                print(f'{len(possible)} possibilities. Choosing random word: {random.choice(possible)}')
+            else:
+                print(f'{len(possible)} possibilities. Choosing most frequent word: {possible[0]}')
+        else:
+            print(f'{len(possible)} possibilities:\n{possible} ')
+        proceed = input('Continue? (Y/N): ')
+        
+        if proceed.upper() == 'Y':
+            self.assistant(possible)
+        else:
+            print("Thanks for playing")
+            sleep(2)
 
-
-
-
-
-
-def get_possible_words(guess, ans_grid):
-    possibilities = []
-    restring = get_regex(guess, ans_grid)
-    for word in wordbank:
-        if re.match(restring, word):
-            possibilities.append(word)
-    return possibilities
-
-
-
-
-
-
-starters = {}
-for word in wordbank:
-    starters[word] = []
-
-
-
-def best_starter(answer):
-    for word in tqdm(selected):
-        grid = get_diff(word, answer)
-        starters[word].append(len(get_possible_words(word, grid)))
-
-
-
-
-
-
-for ans in tqdm(selected):
-    best_starter(ans)
-
-
-
+if __name__ == '__main__':
+    solver = WordleSolver()
+    solver.assistant()
